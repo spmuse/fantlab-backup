@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
-"""FantLab backup for user webstranger (id 54173).
+"""FantLab backup: ratings and reviews for any FantLab user.
 
 Downloads the public ratings list and the full review texts from
 fantlab.ru and stores one dated snapshot per run under
 ~/workspace/fantlab-backup/snapshots/<YYYY-MM-DD>/.
 
+The FantLab user is supplied on the command line (--user-id, and
+optionally --username); nothing about a particular user is hard-coded.
+
 Standard library only (urllib + html.parser). No sign-in is needed:
 the ratings list, the reviews list and the profile page are public.
 
 Usage:
-    python3 fantlab_backup.py [--out DIR] [--dry-run]
+    python3 fantlab_backup.py --user-id 54173 [--username webstranger]
+                              [--out DIR] [--dry-run]
                               [--max-pages N] [--resolve-permalinks]
 
+  --user-id N          FantLab numeric user id (required). Example: the
+                       user at https://fantlab.ru/user54173 has id 54173.
+  --username NAME      FantLab login name, used only for display and for
+                       matching the author byline (optional).
   --out DIR            snapshot root (default ~/workspace/fantlab-backup/snapshots)
   --dry-run            fetch and parse everything, verify counts, write nothing
   --max-pages N        fetch at most N pages of each list (smoke test only)
@@ -43,24 +51,31 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Site-specific parameters.
 #
-# VERIFIED LIVE 2026-11-22 by direct fetch (no sign-in) unless marked
-# PROBE below. The parent agent is running a separate live browser probe
-# of the same pages; if it reports different parameters, update the
-# constants here and re-run --dry-run before the first real backup.
+# VERIFIED LIVE 2026-11-22 by direct fetch (no sign-in). The FantLab
+# user is supplied at run time (--user-id, --username); the URLs are
+# built from the user id by the helpers below, so no particular user
+# is hard-coded anywhere in this file.
 # ---------------------------------------------------------------------------
 
 BASE_URL = "https://fantlab.ru"
-USERNAME = "webstranger"
-USER_ID = 54173
 
-PROFILE_URL = BASE_URL + "/user54173"
+
+def profile_url(user_id: int) -> str:
+    return f"{BASE_URL}/user{user_id}"
+
+
+def marks_url(user_id: int) -> str:
+    return f"{BASE_URL}/user{user_id}/marks"
+
+
+def responses_url(user_id: int) -> str:
+    return f"{BASE_URL}/user{user_id}/responses"
 
 # Ratings list. Default sort is by date (sort=date is also the active
-# link on the page). Pages: ?page=1..12&sort=date, 200 rows per page,
-# 2335 ratings total on 2026-11-22. There is also a ?page=all link,
-# but paginated fetching is used: it is gentler on the server and a
-# single huge page is more likely to be truncated.
-MARKS_URL = BASE_URL + "/user54173/marks"
+# link on the page). Pages: ?page=1..N&sort=date, 200 rows per page.
+# There is also a ?page=all link, but paginated fetching is used: it
+# is gentler on the server and a single huge page is more likely to be
+# truncated.
 MARKS_SORT = "date"          # SORT_PARAM value: date | mark | name | autor | year
 MARKS_TYPE = "all"           # TYPE_PARAM value: all | novel | story | cycle | graph
 PAGE_PARAM = "page"          # pagination query parameter name
@@ -68,10 +83,8 @@ SORT_PARAM = "sort"          # sort query parameter name
 MARKS_PAGE_SIZE = 200        # rows per marks page (observed 2026-11-22)
 
 # Reviews list. Linked from the profile page as "Читать все отзывы".
-# 50 reviews per page, 9 pages, 405 reviews total on 2026-11-22.
-# Each item carries work, date/time, full text and score, so no
-# per-work fetch is needed for the backup itself.
-RESPONSES_URL = BASE_URL + "/user54173/responses"
+# 50 reviews per page. Each item carries work, date/time, full text
+# and score, so no per-work fetch is needed for the backup itself.
 RESPONSES_PAGE_SIZE = 50     # reviews per responses page (observed 2026-11-22)
 
 # Review permalinks. On a work page each review has an anchor
@@ -89,8 +102,8 @@ REQUEST_DELAY = 1.2
 MAX_ATTEMPTS = 3             # attempts per request (transient errors only)
 REQUEST_TIMEOUT = 30
 USER_AGENT = (
-    "FantLabBackup/1.0 (personal backup script, user webstranger; "
-    "https://fantlab.ru/user54173)"
+    "FantLabBackup/1.0 (personal backup script; "
+    "https://github.com/spmuse/fantlab-backup)"
 )
 
 DEFAULT_OUT = Path("~/workspace/fantlab-backup/snapshots").expanduser()
@@ -338,11 +351,11 @@ def parse_review_date(raw: str, fetch_date: dt.date) -> str:
 
 
 class _ResponsesParser(HTMLParser):
-    """Parses one /user54173/responses page.
+    """Parses one /user<id>/responses page.
 
     Each review is a <div class="response-item"> containing:
       p.response-work-info > a[href=/workNNNN...] 'Author «Title»'
-      p.response-autor-info 'webstranger, <date>'
+      p.response-autor-info '<username>, <date>'
       div.response-body-home (full review text, spoiler blocks included)
       div.response-autor-mark 'Оценка: N'
     """
@@ -458,7 +471,8 @@ def parse_responses_page(html: str, fetch_date: dt.date, page_no: int) -> list[d
     return parser.reviews
 
 
-def find_review_on_work_page(work_id: int, username: str = USERNAME) -> dict | None:
+def find_review_on_work_page(work_id: int, user_id: int,
+                            username: str = "") -> dict | None:
     """Locate one user's review on a work page (fallback / permalink tool).
 
     Reviews live on the work page as <a name="responseNNNNNN"> anchors
@@ -476,9 +490,9 @@ def find_review_on_work_page(work_id: int, username: str = USERNAME) -> dict | N
     for i, anchor in enumerate(anchors):
         end = anchors[i + 1].start() if i + 1 < len(anchors) else len(html)
         chunk = html[anchor.start():end]
-        if f"href='/user{USER_ID}'" not in chunk and f'href="/user{USER_ID}"' not in chunk:
+        if f"href='/user{user_id}'" not in chunk and f'href="/user{user_id}"' not in chunk:
             continue
-        if username not in chunk:
+        if username and username not in chunk:
             continue
         date_m = re.search(r'datePublished"\s+content="([^"]+)"', chunk)
         body_m = re.search(
@@ -576,13 +590,13 @@ def write_json(path: Path, data) -> None:
 # Main run
 # ---------------------------------------------------------------------------
 
-def collect(max_pages: int | None, resolve_permalinks: bool,
-            dry_run: bool) -> dict:
+def collect(user_id: int, username: str, max_pages: int | None,
+            resolve_permalinks: bool, dry_run: bool) -> dict:
     """Fetch and parse everything. Returns all data plus raw HTML pages."""
     today = dt.date.today()
     fetch_date = today
-    log(f"fetching profile {PROFILE_URL}")
-    profile_html = fetch(PROFILE_URL)
+    log(f"fetching profile {profile_url(user_id)}")
+    profile_html = fetch(profile_url(user_id))
     profile = parse_profile(profile_html)
     log(f"profile totals: {profile['ratings_total']} ratings, "
         f"{profile['reviews_total']} reviews")
@@ -596,7 +610,7 @@ def collect(max_pages: int | None, resolve_permalinks: bool,
         if max_pages is not None and page > max_pages:
             log(f"--max-pages {max_pages}: stopping marks after page {page - 1}")
             break
-        url = (f"{MARKS_URL}?{PAGE_PARAM}={page}&{SORT_PARAM}={MARKS_SORT}"
+        url = (f"{marks_url(user_id)}?{PAGE_PARAM}={page}&{SORT_PARAM}={MARKS_SORT}"
                f"&type={MARKS_TYPE}")
         log(f"fetching marks page {page}: {url}")
         html = fetch(url)
@@ -629,7 +643,7 @@ def collect(max_pages: int | None, resolve_permalinks: bool,
         if max_pages is not None and page > max_pages:
             log(f"--max-pages {max_pages}: stopping responses after page {page - 1}")
             break
-        url = f"{RESPONSES_URL}?{PAGE_PARAM}={page}"
+        url = f"{responses_url(user_id)}?{PAGE_PARAM}={page}"
         log(f"fetching responses page {page}: {url}")
         html = fetch(url)
         raw_pages.append((f"responses-page-{page}.html", html))
@@ -647,7 +661,7 @@ def collect(max_pages: int | None, resolve_permalinks: bool,
         log("resolving review permalinks from work pages "
             f"({len(reviews)} reviews)")
         for rv in reviews:
-            found = find_review_on_work_page(rv["work_id"])
+            found = find_review_on_work_page(rv["work_id"], user_id, username)
             rv["permalink"] = found["permalink"] if found else None
             if found and found["text"] and found["text"] != rv["text"]:
                 log(f"warning: text mismatch for work {rv['work_id']}")
@@ -674,6 +688,12 @@ def collect(max_pages: int | None, resolve_permalinks: bool,
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Back up FantLab ratings and reviews.")
+    ap.add_argument("--user-id", type=int, required=True,
+                    help="FantLab numeric user id, e.g. 54173 for "
+                    "https://fantlab.ru/user54173")
+    ap.add_argument("--username", default="",
+                    help="FantLab login name, used only for display and "
+                    "for matching the review byline (optional)")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT,
                     help="snapshot root directory")
     ap.add_argument("--dry-run", action="store_true",
@@ -685,7 +705,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     try:
-        data = collect(args.max_pages, args.resolve_permalinks, args.dry_run)
+        data = collect(args.user_id, args.username,
+                       args.max_pages, args.resolve_permalinks, args.dry_run)
     except BackupError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -755,14 +776,15 @@ def main(argv: list[str] | None = None) -> int:
         w.writeheader()
         w.writerows(ratings)
     write_json(snap / "profile.json", {
-        "user": USERNAME, "user_id": USER_ID,
+        "user": args.username or None, "user_id": args.user_id,
         "snapshot_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "ratings_total": len(ratings),
         "reviews_total": len(reviews),
         "ratings_total_reported": profile["ratings_total"],
         "reviews_total_reported": profile["reviews_total"],
-        "sources": {"profile": PROFILE_URL, "marks": MARKS_URL,
-                    "responses": RESPONSES_URL},
+        "sources": {"profile": profile_url(args.user_id),
+                    "marks": marks_url(args.user_id),
+                    "responses": responses_url(args.user_id)},
     })
     write_json(snap / "diff.json", diff)
 
