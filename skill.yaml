@@ -1,0 +1,5 @@
+name: "fantlab-backup"
+title: "FantLab Backup"
+description: "Periodically snapshot a FantLab user's ratings and reviews as a diffable backup, and verify each snapshot against the site totals."
+category: "productivity"
+include_in_prompt: false
