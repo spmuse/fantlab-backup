@@ -4,13 +4,15 @@
 
 - Run the helper script at `~/workspace/custom-skills/fantlab-backup/scripts/fantlab_backup.py` with `python3` and no extra dependencies.
 
+- Pass `--user-id` with the FantLab numeric user id (required) and `--username` with the FantLab login (optional, used only for display and for matching the review byline). No user is hard-coded in the script or the skill: the id is the number in the profile URL, e.g. `https://fantlab.ru/user54173` is id `54173`.
+
 - Pass `--out` with the dated snapshot folder when you want a location other than the default.
 
 - Pass `--dry-run` first when you only want to check that the pages still parse, and expect no files to be written.
 
 - Read the script stdout summary before you report success, and treat a nonzero exit as a failed run.
 
-- Collect every rating from the ratings list at https://fantlab.ru/user54173/marks, including work, author, type, year, score, date rated, and whether a review exists.
+- Collect every rating from the ratings list at https://fantlab.ru/user<USER_ID>/marks, including work, author, type, year, score, date rated, and whether a review exists.
 
 - Fetch the ratings list page by page with the page parameter, 200 rows per page, and stop when the collected count matches the total shown on the page.
 
@@ -20,7 +22,7 @@
 
 - Collect the full text of every review, because the marks table only flags that a review exists.
 
-- Fetch reviews from the reviews listing at https://fantlab.ru/user54173/responses, which shows each review text inline, and fall back to the work page only when a listing entry is incomplete.
+- Fetch reviews from the reviews listing at https://fantlab.ru/user<USER_ID>/responses, which shows each review text inline, and fall back to the work page only when a listing entry is incomplete.
 
 - Walk the reviews listing with page=all to get all reviews on one page, or walk page 1 through page 9 at 50 reviews per page, and stop when the count matches the total shown on the page.
 
@@ -38,9 +40,9 @@
 
 - Compare the collected ratings count with the "Всего оценок" total shown on the marks page, and fail the run when they differ.
 
-- Compare the collected reviews count with the reviews total on the profile page at https://fantlab.ru/user54173, and fail the run when they differ.
+- Compare the collected reviews count with the reviews total on the profile page at https://fantlab.ru/user<USER_ID>, and fail the run when they differ.
 
-- Expect 405 reviews on the profile page as of 22 Nov 2026, and fail the run when the collected count differs.
+- Expect the reviews total shown on the profile page, and fail the run when the collected count differs.
 
 - Spot check the newest entries against the live pages, and confirm the most recent rating date matches what the site shows.
 
@@ -78,9 +80,9 @@
 
 ## Websites
 
-- [FantLab ratings list](https://fantlab.ru/user54173/marks) for the full list of the user ratings. Carry the need for date order and full pagination into any browser task, and verify the total count there.
+- [FantLab ratings list](https://fantlab.ru/user<USER_ID>/marks) for the full list of the user ratings. Carry the need for date order and full pagination into any browser task, and verify the total count there.
 
-- [FantLab profile](https://fantlab.ru/user54173) for the totals used to verify a snapshot. Carry the need for the current ratings and reviews totals into any browser task, and verify them there.
+- [FantLab profile](https://fantlab.ru/user<USER_ID>) for the totals used to verify a snapshot. Carry the need for the current ratings and reviews totals into any browser task, and verify them there.
 
 ## Alternatives for better results
 
