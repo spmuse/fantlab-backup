@@ -327,8 +327,9 @@ def parse_review_date(raw: str, fetch_date: dt.date) -> str:
     """Parse a review date from the responses list.
 
     Forms seen live: '23 ноября 2025 г. 01:39' (full date), '1 ноября 16:56'
-    (day and month, no year: the current year), and, for today's
-    reviews, 'в 17:54' (time only: the fetch date is the review date).
+    (day and month, no year: the current year), and, for recent
+    reviews, 'сегодня в 17:54' (time only: the fetch date is the review
+    date) and 'вчера в 17:24' (time only: the day before the fetch date).
     Returns 'YYYY-MM-DD HH:MM'.
     """
     raw = _clean(raw)
@@ -344,6 +345,10 @@ def parse_review_date(raw: str, fetch_date: dt.date) -> str:
         day, month, hh, mm = m.groups()
         return (f"{fetch_date.year:04d}-{RUSSIAN_MONTHS[month]:02d}-"
                 f"{int(day):02d} {hh}:{mm}")
+    m = re.search(r"(сегодня|вчера) в (\d{2}):(\d{2})", raw)
+    if m:
+        day = fetch_date if m.group(1) == "сегодня" else fetch_date - dt.timedelta(days=1)
+        return f"{day.isoformat()} {m.group(2)}:{m.group(3)}"
     m = re.search(r"в (\d{2}):(\d{2})", raw)
     if m:
         return f"{fetch_date.isoformat()} {m.group(1)}:{m.group(2)}"
